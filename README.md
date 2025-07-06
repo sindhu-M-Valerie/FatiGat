@@ -31,3 +31,5 @@ Projects and session data are saved using the useKV hook (key-value storage), so
 
 **In short:**
 Fatigue Mirror helps you track, visualize, and improve your work/break habits across projects, making it easier to balance productivity and wellbeing
+
+<img width="383" alt="Screenshot 2025-07-04 at 11 19 19 PM" src="https://github.com/user-attachments/assets/a4d8da44-9ae4-44b6-9e48-3136687cdf10" />
