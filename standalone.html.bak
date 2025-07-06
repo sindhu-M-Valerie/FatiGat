@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FatiGat - Productivity Mirror</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React and ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- D3.js -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/react@2.0.10/dist/index.umd.js"></script>
+    
+    <!-- Babel for JSX transformation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+                sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
+        .animate-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: .5;
+            }
+        }
+        
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const { createRoot } = ReactDOM;
+
+        // Simple KV storage hook using localStorage
+        function useKV(key, defaultValue) {
+            const [value, setValue] = useState(() => {
+                try {
+                    const item = window.localStorage.getItem(key);
+                    return item ? JSON.parse(item) : defaultValue;
+                } catch (error) {
+                    return defaultValue;
+                }
+            });
+
+            const setStoredValue = (newValue) => {
+                try {
+                    setValue(newValue);
+                    window.localStorage.setItem(key, JSON.stringify(newValue));
+                } catch (error) {
+                    console.error(`Error saving to localStorage key "${key}":`, error);
+                }
+            };
+
+            return [value, setStoredValue];
+        }
+
+        // Basic UI Components
+        function Button({ children, variant = "secondary", size = "medium", icon, className = "", onClick, ...props }) {
+            const baseClasses = "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none";
+            
+            const variantClasses = {
+                primary: "bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500",
+                secondary: "bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500",
+                plain: "text-gray-600 hover:text-gray-900"
+            };
+            
+            const sizeClasses = {
+                small: "px-3 py-1.5 text-sm",
+                medium: "px-4 py-2 text-sm",
+                large: "px-6 py-3 text-base"
+            };
+            
+            return (
+                <button 
+                    className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
+                    onClick={onClick}
+                    {...props}
+                >
+                    {icon && <span className="mr-2">{icon}</span>}
+                    {children}
+                </button>
+            );
+        }
+
+        function Input({ className = "", ...props }) {
+            return (
+                <input 
+                    className={`px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${className}`}
+                    {...props}
+                />
+            );
+        }
+
+        function Dialog({ children, open, onOpenChange }) {
+            if (!open) return null;
+            
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <div className="fixed inset-0 bg-black/50" onClick={() => onOpenChange(false)}></div>
+                    <div className="relative z-10 w-full max-w-md mx-4">
+                        {children}
+                    </div>
+                </div>
+            );
+        }
+
+        function DialogTrigger({ children, asChild }) {
+            return React.cloneElement(children, {
+                onClick: () => children.props.onClick?.()
+            });
+        }
+
+        function DialogContent({ children, className = "" }) {
+            return (
+                <div className={`bg-white rounded-lg shadow-lg p-6 ${className}`}>
+                    {children}
+                </div>
+            );
+        }
+
+        function DialogHeader({ children }) {
+            return <div className="mb-4">{children}</div>;
+        }
+
+        function DialogTitle({ children, className = "" }) {
+            return <h2 className={`text-lg font-semibold ${className}`}>{children}</h2>;
+        }
+
+        function DialogDescription({ children, className = "" }) {
+            return <p className={`text-sm text-gray-600 mt-1 ${className}`}>{children}</p>;
+        }
+
+        // Predefined project tags
+        const PROJECT_TAGS = [
+            "Development",
+            "Design", 
+            "Research",
+            "Documentation",
+            "Meeting",
+            "Planning",
+            "Bug Fix",
+            "Feature"
+        ];
+
+        // Helper function to calculate productivity score
+        const calculateProductivityScore = (project) => {
+            if (!project.timeSpent) return 0;
+            const breakRatio = project.breaks / (project.timeSpent / 2700);
+            const consistencyScore = project.sessionLengths?.reduce((acc, length) => 
+                acc + (length > 1800 && length < 3600 ? 1 : 0), 0) / (project.sessionLengths?.length || 1);
+            
+            return Math.round((0.5 * Math.min(breakRatio, 1) + 0.5 * consistencyScore) * 100);
+        };
+
+        // Generate personalized suggestions based on work patterns
+        const generateSuggestions = (project) => {
+            const suggestions = [];
+            
+            if (project.breaks / (project.timeSpent / 2700) < 0.8) {
+                suggestions.push("Consider taking more regular breaks to maintain productivity");
+            }
+            
+            const avgSessionLength = project.sessionLengths?.reduce((a, b) => a + b, 0) / project.sessionLengths?.length || 0;
+            if (avgSessionLength > 3600) {
+                suggestions.push("Your sessions are quite long. Try breaking them into smaller chunks");
+            }
+            
+            if (project.timeSpent > 14400 && project.breaks < 4) {
+                suggestions.push("Remember to take regular breaks to prevent fatigue");
+            }
+            
+            return suggestions.length ? suggestions : ["Your work patterns look healthy! Keep it up!"];
+        };
+
+        // Timeline visualization component
+        function Timeline({ project }) {
+            const svgRef = useRef();
+            
+            useEffect(() => {
+                if (!project || !project.timeline || !svgRef.current) return;
+
+                const width = svgRef.current.clientWidth || 400;
+                const height = 60;
+                const margin = { top: 10, right: 10, bottom: 20, left: 40 };
+
+                d3.select(svgRef.current).selectAll("*").remove();
+
+                const svg = d3.select(svgRef.current)
+                    .attr("width", width)
+                    .attr("height", height);
+
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                const x = d3.scaleTime()
+                    .domain([today, d3.timeDay.offset(today, 1)])
+                    .range([margin.left, width - margin.right]);
+
+                const xAxis = d3.axisBottom(x)
+                    .ticks(8)
+                    .tickFormat(d3.timeFormat("%H:%M"));
+
+                svg.append("g")
+                    .attr("transform", `translate(0,${height - margin.bottom})`)
+                    .call(xAxis);
+
+                svg.selectAll("rect.work")
+                    .data(project.timeline.filter(t => t.type === 'work'))
+                    .enter()
+                    .append("rect")
+                    .attr("class", "work")
+                    .attr("x", d => x(new Date(d.start)))
+                    .attr("y", margin.top)
+                    .attr("width", d => x(new Date(d.end)) - x(new Date(d.start)))
+                    .attr("height", height - margin.top - margin.bottom)
+                    .attr("fill", "#3b82f6")
+                    .attr("opacity", 0.6);
+
+                svg.selectAll("rect.break")
+                    .data(project.timeline.filter(t => t.type === 'break'))
+                    .enter()
+                    .append("rect")
+                    .attr("class", "break")
+                    .attr("x", d => x(new Date(d.start)))
+                    .attr("y", margin.top)
+                    .attr("width", d => x(new Date(d.end)) - x(new Date(d.start)))
+                    .attr("height", height - margin.top - margin.bottom)
+                    .attr("fill", "#10b981")
+                    .attr("opacity", 0.6);
+
+            }, [project]);
+
+            return (
+                <div className="w-full">
+                    <svg ref={svgRef} className="w-full"></svg>
+                </div>
+            );
+        }
+
+        function App() {
+            const [projects, setProjects] = useKV("fatigue-projects", []);
+            const [activeProject, setActiveProject] = useState(null);
+            const [timeSpent, setTimeSpent] = useState(0);
+            const [breakDue, setBreakDue] = useState(false);
+            const [sessionStart, setSessionStart] = useState(null);
+            const [selectedTags, setSelectedTags] = useState([]);
+            const [newProjectName, setNewProjectName] = useState("");
+            const [newProjectTags, setNewProjectTags] = useState([]);
+            const [username, setUsername] = useKV("fatigue-username", "");
+            const [showUsernameInput, setShowUsernameInput] = useState(!username);
+            
+            // Backend data fetching states
+            const [backendProjects, setBackendProjects] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
+            const [useBackend, setUseBackend] = useState(false);
+
+            // Fetch user data from backend when username changes
+            useEffect(() => {
+                if (!username || !useBackend) return;
+                
+                setLoading(true);
+                setError(null);
+
+                fetch(`/api/userdata?username=${encodeURIComponent(username)}`)
+                    .then(res => {
+                        if (!res.ok) throw new Error("User not found or server error");
+                        return res.json();
+                    })
+                    .then(data => {
+                        setBackendProjects(data.projects || []);
+                    })
+                    .catch(err => {
+                        setBackendProjects([]);
+                        setError(err.message);
+                    })
+                    .finally(() => setLoading(false));
+            }, [username, useBackend]);
+
+            // Determine which projects to use (local or backend)
+            const currentProjects = useBackend ? backendProjects : projects;
+
+            // Aggregate statistics across all projects
+            const totalTimeSpent = currentProjects.reduce((acc, p) => acc + (p.timeSpent || 0), 0);
+            const totalBreaks = currentProjects.reduce((acc, p) => acc + (p.breaks || 0), 0);
+            const totalProjects = currentProjects.length;
+            const avgProductivityScore = currentProjects.length > 0 
+                ? currentProjects.reduce((acc, p) => acc + calculateProductivityScore(p), 0) / currentProjects.length 
+                : 0;
+
+            useEffect(() => {
+                let interval;
+                if (activeProject) {
+                    if (!sessionStart) {
+                        const now = Date.now();
+                        setSessionStart(now);
+                        setProjects(prev => prev.map(p => 
+                            p.id === activeProject.id ? {
+                                ...p,
+                                timeline: [...(p.timeline || []), {
+                                    type: 'work',
+                                    start: now,
+                                    end: now
+                                }]
+                            } : p
+                        ));
+                    }
+                    interval = setInterval(() => {
+                        setTimeSpent(prev => {
+                            const newTime = prev + 1;
+                            if (newTime % 2700 === 0) {
+                                setBreakDue(true);
+                            }
+                            return newTime;
+                        });
+                    }, 1000);
+                } else if (sessionStart) {
+                    const now = Date.now();
+                    const sessionLength = (now - sessionStart) / 1000;
+                    setProjects(prev => prev.map(p => 
+                        p.id === activeProject?.id ? {
+                            ...p,
+                            timeSpent: (p.timeSpent || 0) + sessionLength,
+                            sessionLengths: [...(p.sessionLengths || []), sessionLength],
+                            timeline: (p.timeline || []).map((t, i) => 
+                                i === p.timeline.length - 1 ? { ...t, end: now } : t
+                            )
+                        } : p
+                    ));
+                    setSessionStart(null);
+                    setTimeSpent(0);
+                }
+                return () => clearInterval(interval);
+            }, [activeProject, sessionStart]);
+
+            const addProject = () => {
+                if (newProjectName.trim()) {
+                    setProjects(prev => [...prev, {
+                        id: Date.now(),
+                        name: newProjectName,
+                        tags: newProjectTags,
+                        timeSpent: 0,
+                        breaks: 0,
+                        sessionLengths: [],
+                        timeline: []
+                    }]);
+                    setNewProjectName("");
+                    setNewProjectTags([]);
+                }
+            };
+
+            const takeBreak = (projectId) => {
+                const now = Date.now();
+                setProjects(prev => prev.map(p => 
+                    p.id === projectId ? {
+                        ...p,
+                        breaks: p.breaks + 1,
+                        timeline: [...(p.timeline || []), {
+                            type: 'break',
+                            start: now,
+                            end: now + (5 * 60 * 1000)
+                        }]
+                    } : p
+                ));
+                setBreakDue(false);
+            };
+
+            const filteredProjects = currentProjects.filter(project => 
+                selectedTags.length === 0 || 
+                project.tags?.some(tag => selectedTags.includes(tag))
+            );
+
+            // Icons (using simple text alternatives since we don't have phosphor-icons working properly in this setup)
+            const Timer = () => <span>⏱️</span>;
+            const Coffee = () => <span>☕</span>;
+            const Brain = () => <span>🧠</span>;
+            const ChartLine = () => <span>📊</span>;
+            const Plus = () => <span>➕</span>;
+            const Lightning = () => <span>⚡</span>;
+            const Gauge = () => <span>⚡</span>;
+            const Clock = () => <span>🕐</span>;
+            const Tag = () => <span>🏷️</span>;
+            const FunnelSimple = () => <span>🔽</span>;
+
+            return (
+                <div className="min-h-screen bg-black text-white overflow-hidden">
+                    {/* Animated background */}
+                    <div className="fixed inset-0 bg-gradient-to-br from-purple-900/20 via-black to-blue-900/20">
+                        <div className="absolute inset-0 bg-gradient-radial from-purple-900/10 via-transparent to-blue-900/10"></div>
+                    </div>
+                    
+                    {/* Header */}
+                    <header className="relative z-10 border-b border-gray-800/50 backdrop-blur-sm">
+                        <div className="max-w-7xl mx-auto px-6 py-4">
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center space-x-4">
+                                    <div className="flex items-center space-x-3">
+                                        <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
+                                            <Brain />
+                                        </div>
+                                        <div>
+                                            <h1 className="text-lg font-semibold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
+                                                FatiGat
+                                            </h1>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex items-center space-x-4">
+                                    {username && (
+                                        <div className="flex items-center space-x-3 bg-gray-900/50 rounded-full px-4 py-2 border border-gray-700/50">
+                                            <div className="w-6 h-6 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+                                                <span className="text-white text-xs font-medium">
+                                                    {username.charAt(0).toUpperCase()}
+                                                </span>
+                                            </div>
+                                            <span className="text-sm text-gray-300">{username}</span>
+                                            <Button
+                                                variant="plain"
+                                                size="small"
+                                                onClick={() => setShowUsernameInput(true)}
+                                                className="text-xs text-gray-500 hover:text-gray-300"
+                                            >
+                                                edit
+                                            </Button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Username Input Modal */}
+                    <Dialog open={showUsernameInput} onOpenChange={setShowUsernameInput}>
+                        <DialogContent className="bg-gray-900 border-gray-700 text-white">
+                            <DialogHeader>
+                                <DialogTitle className="text-white">
+                                    {username ? "Update Username" : "Welcome to FatiGat"}
+                                </DialogTitle>
+                                <DialogDescription className="text-gray-400">
+                                    {username 
+                                        ? "Change your display name" 
+                                        : "What should we call you?"
+                                    }
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-sm font-medium mb-2 block text-gray-300">Username</label>
+                                    <Input 
+                                        placeholder="Enter your username..."
+                                        value={username}
+                                        onChange={e => setUsername(e.target.value)}
+                                        className="bg-gray-800 border-gray-700 text-white placeholder-gray-500"
+                                    />
+                                </div>
+                                <Button 
+                                    variant="primary" 
+                                    className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 border-0 text-white"
+                                    onClick={() => {
+                                        if (username.trim()) {
+                                            setShowUsernameInput(false);
+                                        }
+                                    }}
+                                >
+                                    {username ? "Update" : "Get Started"}
+                                </Button>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+
+                    {/* Main Content */}
+                    <main className="relative z-10 max-w-7xl mx-auto px-6 py-8">
+                        {/* Hero Section */}
+                        <div className="text-center mb-12">
+                            <h1 className="text-4xl md:text-6xl font-bold mb-4">
+                                <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
+                                    Productivity
+                                </span>
+                                <br />
+                                <span className="text-white">Mirror</span>
+                            </h1>
+                            <p className="text-xl text-gray-400 mb-8 max-w-2xl mx-auto">
+                                {username ? `Welcome back, ${username}` : "Track your productivity and maintain healthy work patterns"}
+                            </p>
+                        </div>
+
+                        {/* Backend Data Source Configuration */}
+                        {username && (
+                            <div className="bg-gray-900/30 backdrop-blur-sm rounded-2xl p-6 border border-gray-800/50 mb-8">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                                            <ChartLine />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-white">Data Source</h3>
+                                            <p className="text-sm text-gray-400">
+                                                {useBackend ? "Using backend data" : "Using local data"}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <Button
+                                        variant={useBackend ? "primary" : "secondary"}
+                                        size="small"
+                                        onClick={() => setUseBackend(!useBackend)}
+                                        className={useBackend 
+                                            ? "bg-blue-600 text-white border-blue-500" 
+                                            : "bg-gray-800/50 text-gray-300 border-gray-700/50 hover:bg-gray-700/50"
+                                        }
+                                    >
+                                        {useBackend ? "Switch to Local" : "Use Backend"}
+                                    </Button>
+                                </div>
+                                
+                                {useBackend && (
+                                    <div className="space-y-4">
+                                        <div className="flex items-center gap-2">
+                                            <label htmlFor="username-display" className="text-sm font-medium text-gray-300">
+                                                Username:
+                                            </label>
+                                            <Input
+                                                id="username-display"
+                                                placeholder="Enter username"
+                                                value={username}
+                                                onChange={e => setUsername(e.target.value)}
+                                                className="w-48 bg-gray-800 border-gray-700 text-white placeholder-gray-500"
+                                            />
+                                        </div>
+                                        
+                                        {loading && (
+                                            <div className="flex items-center gap-2 text-blue-400">
+                                                <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                                                <span className="text-sm">Loading user data...</span>
+                                            </div>
+                                        )}
+                                        
+                                        {error && (
+                                            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                                                <p className="text-red-400 text-sm">Error: {error}</p>
+                                            </div>
+                                        )}
+                                        
+                                        {!loading && !error && backendProjects.length > 0 && (
+                                            <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                                                <p className="text-green-400 text-sm">
+                                                    Successfully loaded {backendProjects.length} projects from backend
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Stats Section */}
+                        {currentProjects.length > 0 && (
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
+                                <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl p-6 border border-gray-800/50">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <p className="text-sm text-gray-400 mb-1">Total Projects</p>
+                                            <p className="text-3xl font-bold text-white">{totalProjects}</p>
+                                        </div>
+                                        <div className="w-12 h-12 bg-purple-500/20 rounded-xl flex items-center justify-center">
+                                            <Brain />
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl p-6 border border-gray-800/50">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <p className="text-sm text-gray-400 mb-1">Total Time</p>
+                                            <p className="text-3xl font-bold text-white">
+                                                {Math.round(totalTimeSpent / 3600)}h
+                                            </p>
+                                        </div>
+                                        <div className="w-12 h-12 bg-blue-500/20 rounded-xl flex items-center justify-center">
+                                            <Timer />
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl p-6 border border-gray-800/50">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <p className="text-sm text-gray-400 mb-1">Total Breaks</p>
+                                            <p className="text-3xl font-bold text-white">{totalBreaks}</p>
+                                        </div>
+                                        <div className="w-12 h-12 bg-green-500/20 rounded-xl flex items-center justify-center">
+                                            <Coffee />
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl p-6 border border-gray-800/50">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <p className="text-sm text-gray-400 mb-1">Avg Score</p>
+                                            <p className="text-3xl font-bold text-white">
+                                                {Math.round(avgProductivityScore)}%
+                                            </p>
+                                        </div>
+                                        <div className="w-12 h-12 bg-yellow-500/20 rounded-xl flex items-center justify-center">
+                                            <Gauge />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Add Project Button for empty state */}
+                        {!currentProjects.length && !loading && (
+                            <div className="text-center">
+                                <Button 
+                                    variant="primary" 
+                                    size="large"
+                                    className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 border-0 text-white px-8 py-3 text-lg"
+                                    onClick={() => {
+                                        const name = prompt("Enter project name:");
+                                        if (name) {
+                                            setProjects(prev => [...prev, {
+                                                id: Date.now(),
+                                                name: name,
+                                                tags: [],
+                                                timeSpent: 0,
+                                                breaks: 0,
+                                                sessionLengths: [],
+                                                timeline: []
+                                            }]);
+                                        }
+                                    }}
+                                >
+                                    <Plus /> Start Your First Project
+                                </Button>
+                            </div>
+                        )}
+
+                        {/* Projects List */}
+                        {filteredProjects.length > 0 && (
+                            <div className="space-y-6">
+                                {filteredProjects.map(project => (
+                                    <div key={project.id} className="bg-gray-900/30 backdrop-blur-sm rounded-2xl border border-gray-800/50 overflow-hidden hover:bg-gray-900/40 transition-all duration-300">
+                                        <div className="p-6">
+                                            <div className="flex justify-between items-start mb-6">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-3 mb-3">
+                                                        <h3 className="text-xl font-semibold text-white">{project.name}</h3>
+                                                        {activeProject?.id === project.id && (
+                                                            <span className="inline-flex items-center gap-2 px-3 py-1 bg-green-500/20 text-green-400 rounded-full text-xs font-medium border border-green-500/30">
+                                                                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                                                                Active
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm text-gray-400">
+                                                        Total time: {Math.floor((project.timeSpent || 0) / 3600)}h {Math.floor(((project.timeSpent || 0) % 3600) / 60)}m
+                                                    </p>
+                                                </div>
+                                                <div className="flex gap-3">
+                                                    <Button 
+                                                        variant={activeProject?.id === project.id ? "primary" : "secondary"}
+                                                        onClick={() => setActiveProject(activeProject?.id === project.id ? null : project)}
+                                                        className={activeProject?.id === project.id 
+                                                            ? "bg-green-600 text-white hover:bg-green-500 border-green-500" 
+                                                            : "bg-gray-800/50 text-gray-300 border-gray-700/50 hover:bg-gray-700/50"
+                                                        }
+                                                    >
+                                                        <Timer /> {activeProject?.id === project.id ? 'Stop' : 'Start'}
+                                                    </Button>
+                                                    <Button 
+                                                        variant="plain"
+                                                        onClick={() => takeBreak(project.id)}
+                                                        className="bg-gray-800/50 text-gray-300 border-gray-700/50 hover:bg-gray-700/50"
+                                                    >
+                                                        <Coffee /> Break
+                                                    </Button>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                                <div className="flex items-center gap-2">
+                                                    <Gauge />
+                                                    <span className="text-sm text-gray-300">
+                                                        Productivity: <span className="font-semibold text-white">{calculateProductivityScore(project)}%</span>
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <Coffee />
+                                                    <span className="text-sm text-gray-300">
+                                                        Breaks: <span className="font-semibold text-white">{project.breaks || 0}</span>
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-gray-800/30 p-4 rounded-xl mb-4 border border-gray-700/50">
+                                                <h4 className="text-sm font-medium mb-3 flex items-center gap-2 text-gray-300">
+                                                    <Clock />
+                                                    Daily Timeline
+                                                </h4>
+                                                <Timeline project={project} />
+                                            </div>
+
+                                            <div className="bg-gray-800/30 p-4 rounded-xl border border-gray-700/50">
+                                                <h4 className="text-sm font-medium mb-3 flex items-center gap-2 text-gray-300">
+                                                    <Lightning />
+                                                    Wellness Suggestions
+                                                </h4>
+                                                <ul className="text-sm space-y-2">
+                                                    {generateSuggestions(project).map((suggestion, i) => (
+                                                        <li key={i} className="text-gray-400 flex items-start gap-2">
+                                                            <span className="text-blue-400 mt-1 text-xs">•</span>
+                                                            {suggestion}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Loading States */}
+                        {loading && (
+                            <div className="bg-gray-900/30 backdrop-blur-sm rounded-2xl p-12 border border-gray-800/50 text-center">
+                                <div className="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                                </div>
+                                <h3 className="text-xl font-semibold text-white mb-2">Loading user data...</h3>
+                                <p className="text-gray-400">Please wait while we fetch your projects.</p>
+                            </div>
+                        )}
+                        
+                        {error && (
+                            <div className="bg-gray-900/30 backdrop-blur-sm rounded-2xl p-12 border border-gray-800/50 text-center">
+                                <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <div className="text-red-400 text-2xl">⚠️</div>
+                                </div>
+                                <h3 className="text-xl font-semibold text-white mb-2">Error loading data</h3>
+                                <p className="text-gray-400 mb-6">{error}</p>
+                                <Button
+                                    variant="primary"
+                                    onClick={() => setUseBackend(false)}
+                                    className="bg-gray-600 hover:bg-gray-500 text-white"
+                                >
+                                    Switch to Local Data
+                                </Button>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* Break Reminder Dialog */}
+                    <Dialog open={breakDue} onOpenChange={setBreakDue}>
+                        <DialogContent className="bg-gray-900 border-gray-700 text-white">
+                            <DialogHeader>
+                                <DialogTitle className="text-xl font-semibold text-center text-white">Time for a Break! ☕</DialogTitle>
+                                <DialogDescription className="text-center text-gray-400">
+                                    You've been working for 45 minutes. Taking regular breaks helps maintain productivity.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                                <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700/50">
+                                    <h4 className="font-medium mb-2 text-white">Suggested activities:</h4>
+                                    <ul className="text-sm space-y-1 text-gray-400">
+                                        <li>• Take a 5-minute walk</li>
+                                        <li>• Do some quick stretches</li>
+                                        <li>• Rest your eyes by looking at something distant</li>
+                                        <li>• Get a glass of water</li>
+                                        <li>• Practice deep breathing</li>
+                                    </ul>
+                                </div>
+                                <div className="flex gap-3">
+                                    <Button 
+                                        variant="primary" 
+                                        className="flex-1 bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-500 hover:to-blue-500 border-0 text-white"
+                                        onClick={() => {
+                                            setBreakDue(false);
+                                            if (activeProject) {
+                                                takeBreak(activeProject.id);
+                                            }
+                                        }}
+                                    >
+                                        Start Break
+                                    </Button>
+                                    <Button 
+                                        variant="secondary"
+                                        onClick={() => setBreakDue(false)}
+                                        className="bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700"
+                                    >
+                                        Remind me later
+                                    </Button>
+                                </div>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+                </div>
+            );
+        }
+
+        const root = createRoot(document.getElementById("root"));
+        root.render(<App />);
+    </script>
+</body>
+</html>

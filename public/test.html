@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FatiGat Test</title>
+    <style>
+        body {
+            background: #000;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            padding: 50px;
+        }
+        h1 {
+            color: #8B5CF6;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 FatiGat Static Test</h1>
+    <p>If you can see this, the server is working!</p>
+    <p>Time: <span id="time"></span></p>
+    <button onclick="alert('Button works!')">Test Button</button>
+    
+    <script>
+        document.getElementById('time').textContent = new Date().toLocaleTimeString();
+        console.log('Static test page loaded successfully');
+    </script>
+</body>
+</html>
