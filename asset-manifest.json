@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/FatiGat/static/css/main.c2facc0a.css",
+    "main.js": "/FatiGat/static/js/main.c040f762.js",
+    "index.html": "/FatiGat/index.html",
+    "main.c2facc0a.css.map": "/FatiGat/static/css/main.c2facc0a.css.map",
+    "main.c040f762.js.map": "/FatiGat/static/js/main.c040f762.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.c2facc0a.css",
+    "static/js/main.c040f762.js"
+  ]
+}
